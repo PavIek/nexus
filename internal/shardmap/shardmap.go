@@ -1,9 +1,9 @@
 package shardmap
 
 import (
-	"hash/fnv"
 	"sync"
 
+	"example.com/nexus/internal/hash"
 	"golang.org/x/sys/cpu"
 )
 
@@ -26,7 +26,7 @@ func New(numShards int) *ShardedMap {
 }
 
 func (sm *ShardedMap) getShard(key string) *Shard {
-	return sm.shards[shardedMapHash(key)%len(sm.shards)]
+	return sm.shards[hash.FNVNew32aHash(key)%len(sm.shards)]
 }
 
 func (sm *ShardedMap) Set(key string, val int64) {
@@ -42,10 +42,4 @@ func (sm *ShardedMap) Get(key string) (int64, bool) {
 	defer sh.mu.RUnlock()
 	val, ok := sh.data[key]
 	return val, ok
-}
-
-func shardedMapHash(key string) int {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(key))
-	return int(h.Sum32())
 }

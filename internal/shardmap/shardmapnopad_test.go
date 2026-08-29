@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"example.com/nexus/internal/hash"
 	"golang.org/x/sys/cpu"
 )
 
@@ -26,7 +27,7 @@ func newBenchMapNoPad(numShards int) *benchMapNoPad {
 }
 
 func (sm *benchMapNoPad) Set(key string, val int64) {
-	sh := sm.shards[shardedMapHash(key)%len(sm.shards)]
+	sh := sm.shards[hash.FNVNew32aHash(key)%len(sm.shards)]
 	sh.mu.Lock()
 	sh.data[key] = val
 	sh.mu.Unlock()
@@ -51,7 +52,7 @@ func newBenchMapPadded(numShards int) *benchMapPadded {
 }
 
 func (sm *benchMapPadded) Set(key string, val int64) {
-	sh := sm.shards[shardedMapHash(key)%len(sm.shards)]
+	sh := sm.shards[hash.FNVNew32aHash(key)%len(sm.shards)]
 	sh.mu.Lock()
 	sh.data[key] = val
 	sh.mu.Unlock()

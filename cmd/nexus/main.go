@@ -7,9 +7,18 @@ import (
 	"log"
 	"net"
 	"sync"
+	"time"
 
-	"example.com/nexus/internal/ringbuffer"
+	"example.com/nexus/internal/hash"
 )
+
+const maxMessageSize = 4096
+
+var bufferPool = sync.Pool{
+	New: func() any {
+		return make([]byte, maxMessageSize)
+	},
+}
 
 func main() {
 	ln, err := net.Listen("tcp", ":8080")
@@ -17,6 +26,8 @@ func main() {
 		log.Fatal(err)
 	}
 	defer ln.Close()
+
+	initWorkers()
 
 	for {
 		conn, err := ln.Accept()
@@ -30,23 +41,19 @@ func main() {
 
 func handleConn(conn net.Conn) {
 	defer conn.Close()
+
+	buf := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buf)
+
 	for {
-		msg, err := readMessage(conn)
+
+		msg, err := readMessageBuffer(conn, buf)
 		if err != nil {
 			return
 		}
-		fmt.Println(string(msg))
-	}
-}
 
-func readMessage(conn net.Conn) ([]byte, error) {
-	var length uint32
-	if err := binary.Read(conn, binary.BigEndian, &length); err != nil {
-		return nil, err
+		dispatch(msg)
 	}
-	data := make([]byte, length)
-	_, err := io.ReadFull(conn, data)
-	return data, err
 }
 
 func readMessageBuffer(conn net.Conn, buf []byte) ([]byte, error) {
@@ -59,24 +66,39 @@ func readMessageBuffer(conn net.Conn, buf []byte) ([]byte, error) {
 		return nil, fmt.Errorf("message too large: %d", length)
 	}
 
+	data := buf[:length]
+	if _, err := io.ReadFull(conn, data); err != nil {
+		return nil, err
+	}
+
+	return data, nil
 }
 
-type Worker struct {
-	rb *ringbuffer.RingBuffer[[]byte]
-}
+// func readMessage(conn net.Conn) ([]byte, error) {
+// 	var length uint32
+// 	if err := binary.Read(conn, binary.BigEndian, &length); err != nil {
+// 		return nil, err
+// 	}
+// 	data := make([]byte, length)
+// 	_, err := io.ReadFull(conn, data)
+// 	return data, err
+// }
 
-func (w *Worker) Run() {
-	for {
-		data, ok := w.rb.Pop()
-		if !ok {
-			continue
-		}
-		fmt.Println(data)
+func dispatch(msg []byte) {
+	key := extractKey(msg)
+	idx := hash.FNVNew32aHash(key) % len(workers)
+
+	task := Task{
+		Key:  key,
+		Data: append([]byte(nil), msg...),
+	}
+
+	for !workers[idx].rb.Push(task) {
+		fmt.Println("worker busy...")
+		time.Sleep(10 * time.Second)
 	}
 }
 
-var bufferPool = sync.Pool{
-	New: func() any {
-		return make([]byte, 4096)
-	},
+func extractKey(msg []byte) string {
+	return string(msg)
 }
