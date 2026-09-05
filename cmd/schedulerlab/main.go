@@ -37,6 +37,8 @@ func main() {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
 			lastTid := -1
 			changes := 0
 
